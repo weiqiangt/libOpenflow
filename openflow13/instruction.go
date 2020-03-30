@@ -3,6 +3,7 @@ package openflow13
 // This file contains OFP 1.3 instruction defenitions
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 
@@ -18,6 +19,11 @@ const (
 	InstrType_CLEAR_ACTIONS  = 5      /* Clears all actions from the datapath action set */
 	InstrType_METER          = 6      /* Apply meter (rate limiter) */
 	InstrType_EXPERIMENTER   = 0xFFFF /* Experimenter instruction */
+)
+
+// onf_instruction_exp_type 1.3
+const (
+	InstrTypeET_EVICTION_IMPORTANCE uint16 = 1920
 )
 
 // Generic instruction header
@@ -68,6 +74,21 @@ func DecodeInstr(data []byte) Instruction {
 	case InstrType_METER:
 		a = new(InstrMeter)
 	case InstrType_EXPERIMENTER:
+		if len(data) < 8 {
+			break
+		}
+		experimenter := binary.BigEndian.Uint32(data[4:9])
+		switch experimenter {
+		case ONF_EXPERIMENTER_ID:
+			if len(data) < 12 {
+				break
+			}
+			expType := binary.BigEndian.Uint16(data[10:12])
+			switch expType {
+			case InstrTypeET_EVICTION_IMPORTANCE:
+				a = new(InstrEvictionImportance)
+			}
+		}
 	}
 
 	a.UnmarshalBinary(data)
@@ -254,4 +275,75 @@ type InstrMeter struct {
 
 func (instr *InstrMeter) AddAction(act Action, prepend bool) error {
 	return errors.New("Not supported on this instrction")
+}
+
+var _ util.Message = new(InstrEvictionImportance)
+
+type InstrEvictionImportance struct {
+	instrHeader    InstrHeader
+	Experimenter   uint32
+	ExperimentType uint16
+	Importance     uint16
+	pad            [4]uint8
+}
+
+func NewInstrEvictionImportance(importance uint16) *InstrEvictionImportance {
+	return &InstrEvictionImportance{
+		instrHeader: InstrHeader{
+			Type:   InstrType_EXPERIMENTER,
+			Length: 16,
+		},
+		Experimenter:   ONF_EXPERIMENTER_ID,
+		ExperimentType: InstrTypeET_EVICTION_IMPORTANCE,
+		Importance:     importance,
+		pad:            [4]uint8{},
+	}
+}
+
+func (i *InstrEvictionImportance) AddAction(_ Action, _ bool) error {
+	return nil
+}
+
+func (i *InstrEvictionImportance) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.BigEndian, i.instrHeader.Type); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&buf, binary.BigEndian, i.instrHeader.Length); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&buf, binary.BigEndian, i.Experimenter); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&buf, binary.BigEndian, i.ExperimentType); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&buf, binary.BigEndian, i.Importance); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&buf, binary.BigEndian, i.pad); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (i *InstrEvictionImportance) UnmarshalBinary(data []byte) error {
+	if err := i.instrHeader.UnmarshalBinary(data); err != nil {
+		return err
+	}
+	buf := bytes.NewBuffer(data[i.instrHeader.Len():])
+	if err := binary.Read(buf, binary.BigEndian, i.Experimenter); err != nil {
+		return err
+	}
+	if err := binary.Read(buf, binary.BigEndian, i.ExperimentType); err != nil {
+		return err
+	}
+	if err := binary.Read(buf, binary.BigEndian, i.Importance); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *InstrEvictionImportance) Len() uint16 {
+	return 16
 }

@@ -136,6 +136,15 @@ func Parse(b []byte) (message util.Message, err error) {
 		case Type_BundleAdd:
 			message = new(BundleAdd)
 			err = message.UnmarshalBinary(b)
+		case Type_EvictionSet:
+			message = new(EvictionSet)
+			err = message.UnmarshalBinary(b)
+		case Type_EvictionReply:
+			message = new(EvictionGetReply)
+			err = message.UnmarshalBinary(b)
+		case Type_EvictionRequest:
+			message = new(EvictionGet)
+			err = message.UnmarshalBinary(b)
 		default:
 			message = vh
 		}
